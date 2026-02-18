@@ -10,6 +10,8 @@ env/
 
 # Environment variables
 .env
+.env.local
+.env.*.local
 
 # Django stuff
 *.log
@@ -17,14 +19,11 @@ db.sqlite3
 staticfiles/
 media/
 
-# Django migrations (keep __init__.py)
-*/migrations/*
-!*/migrations/__init__.py
-
-# ML artifacts
+# ML artifacts (exclude generated models, keep training data)
 *.pkl
 *.joblib
-*.csv
+# Keep train_data.csv for ML training
+!backend/nutrition/train_data.csv
 
 # IDE / Editor files
 .vscode/
@@ -39,6 +38,7 @@ Thumbs.db
 # Testing / coverage
 .coverage
 htmlcov/
+.pytest_cache/
 
 # Node (if frontend exists separately)
 node_modules/
@@ -46,3 +46,4 @@ node_modules/
 # Build files
 dist/
 build/
+*.egg-info/

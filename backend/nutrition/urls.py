@@ -9,6 +9,8 @@ from .views import (
     WeeklySummary,
     NutritionRiskPrediction,
     ExerciseRecommendation,
+    NutritionDeficiencyAssessment,
+    NutritionDeficiencyAssessmentAuth,
 )
 
 router = DefaultRouter()
@@ -23,4 +25,7 @@ urlpatterns = [
     path('weekly/', WeeklySummary.as_view()),
     path("risk/", NutritionRiskPrediction.as_view()),
     path("exercise/", ExerciseRecommendation.as_view()),
+    # AI-Powered Nutrition Deficiency Assessment Endpoints
+    path("assessment/", NutritionDeficiencyAssessment.as_view(), name="nutrition-assessment"),
+    path("assessment/auth/", NutritionDeficiencyAssessmentAuth.as_view(), name="nutrition-assessment-auth"),
 ]

@@ -1,9 +1,15 @@
 from rest_framework.viewsets import ModelViewSet
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import FoodItem, FoodLog
-from .serializers import FoodItemSerializer, FoodLogSerializer
+from .serializers import (
+    FoodItemSerializer, 
+    FoodLogSerializer,
+    NutritionAssessmentInputSerializer,
+    NutritionAssessmentOutputSerializer
+)
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework import status
 from datetime import date
 from .ai_langchain import generate_explainable_advice
 from .ml_features import extract_user_features
@@ -12,6 +18,7 @@ from .exercise_rules import get_exercise_plan
 from .ai_exercise import explain_exercise
 from .regions import STATE_TO_REGION
 from .regional_foods import REGIONAL_FOODS
+from .deficiency_engine import assess_nutrition_deficiency
 
 
 
@@ -291,3 +298,160 @@ class ExerciseRecommendation(APIView):
             "ai_explanation": ai_explanation,
             "disclaimer": "Exercise suggestions are general and not a substitute for professional advice."
         })
+
+
+class NutritionDeficiencyAssessment(APIView):
+    """
+    AI-Powered Personalized Nutrition & Deficiency Risk Assessment Engine
+    
+    Analyzes user demographic, lifestyle, dietary, and geographic inputs
+    to estimate potential nutrient deficiencies and generate structured
+    JSON output for dashboard visualization.
+    
+    POST /nutrition/assessment/
+    """
+    permission_classes = [AllowAny]  # Allow unauthenticated access for assessment
+    
+    def post(self, request):
+        """
+        Process nutrition deficiency assessment request
+        
+        Expected Input Format:
+        {
+            "age": "",
+            "gender": "",
+            "height_cm": "",
+            "weight_kg": "",
+            "health_category": "",
+            "dietary_preference": "",
+            "location": "",
+            "morning_habits": "",
+            "afternoon_habits": "",
+            "evening_habits": "",
+            "questionnaire_responses": {
+                "fatigue": "",
+                "hair_fall": "",
+                "muscle_cramps": "",
+                "sun_exposure_minutes_per_day": "",
+                "dairy_servings_per_day": "",
+                "green_leafy_frequency_per_week": "",
+                "water_source": ""
+            }
+        }
+        """
+        # Validate input
+        serializer = NutritionAssessmentInputSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return Response(
+                {"error": "Invalid input data", "details": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Perform deficiency assessment
+            user_data = serializer.validated_data
+            assessment_result = assess_nutrition_deficiency(user_data)
+            
+            # Validate output structure
+            output_serializer = NutritionAssessmentOutputSerializer(data=assessment_result)
+            
+            if output_serializer.is_valid():
+                return Response(output_serializer.data)
+            else:
+                # Return raw result if serialization has issues
+                return Response(assessment_result)
+                
+        except Exception as e:
+            return Response(
+                {"error": "Assessment failed", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def get(self, request):
+        """
+        GET endpoint for authenticated users - uses profile data
+        """
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required for GET request. Use POST with user data for anonymous assessment."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        try:
+            profile = request.user.userprofile
+            
+            # Build user data from profile
+            user_data = {
+                "age": str(profile.age),
+                "gender": "female" if profile.life_stage in ["pregnant", "lactating"] else "female",  # Default
+                "height_cm": str(profile.height),
+                "weight_kg": str(profile.weight),
+                "health_category": profile.life_stage,
+                "dietary_preference": profile.diet_type,
+                "location": profile.state,
+                "morning_habits": "",
+                "afternoon_habits": "",
+                "evening_habits": "",
+                "questionnaire_responses": {}
+            }
+            
+            # Perform assessment
+            assessment_result = assess_nutrition_deficiency(user_data)
+            
+            return Response(assessment_result)
+            
+        except Exception as e:
+            return Response(
+                {"error": "Assessment failed", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class NutritionDeficiencyAssessmentAuth(APIView):
+    """
+    Authenticated version of the nutrition assessment that can combine
+    profile data with additional questionnaire responses
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        """
+        Process nutrition assessment with profile data supplemented by request data
+        """
+        try:
+            profile = request.user.userprofile
+            
+            # Get questionnaire and habit data from request
+            request_data = request.data
+            
+            # Build comprehensive user data
+            user_data = {
+                "age": str(profile.age),
+                "gender": request_data.get("gender", "female"),
+                "height_cm": str(profile.height),
+                "weight_kg": str(profile.weight),
+                "health_category": profile.life_stage,
+                "dietary_preference": profile.diet_type,
+                "location": profile.state,
+                "morning_habits": request_data.get("morning_habits", ""),
+                "afternoon_habits": request_data.get("afternoon_habits", ""),
+                "evening_habits": request_data.get("evening_habits", ""),
+                "questionnaire_responses": request_data.get("questionnaire_responses", {})
+            }
+            
+            # Perform assessment
+            assessment_result = assess_nutrition_deficiency(user_data)
+            
+            return Response(assessment_result)
+            
+        except AttributeError:
+            return Response(
+                {"error": "User profile not found. Please complete your profile first."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {"error": "Assessment failed", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
